@@ -1,1 +1,240 @@
 
+import tkinter as tk
+from tkinter import messagebox
+import sqlite3
+import uuid
+
+# Create or connect to a SQLite database
+conn = sqlite3.connect('family_tree.db')
+c = conn.cursor()
+
+# Create tables
+c.execute('''
+    CREATE TABLE IF NOT EXISTS persons (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        parent_name TEXT,
+        address TEXT,
+        blood_group TEXT,
+        whatsapp_number TEXT,
+        email TEXT
+    )
+''')
+
+c.execute('''
+    CREATE TABLE IF NOT EXISTS relationships (
+        person_id TEXT,
+        relative_id TEXT,
+        relationship TEXT,
+        FOREIGN KEY(person_id) REFERENCES persons(id),
+        FOREIGN KEY(relative_id) REFERENCES persons(id)
+    )
+''')
+
+conn.commit()
+
+# Function to generate a unique ID
+def generate_unique_id():
+    return str(uuid.uuid4())
+
+# Function to add a new person
+def add_person(details, parent_id=None, relationship=None):
+    unique_id = generate_unique_id()
+    c.execute('INSERT INTO persons (id, name, parent_name, address, blood_group, whatsapp_number, email) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              (unique_id, details['name'], details['parent_name'], details['address'], details['blood_group'], details['whatsapp_number'], details['email']))
+    if parent_id and relationship:
+        c.execute('INSERT INTO relationships (person_id, relative_id, relationship) VALUES (?, ?, ?)',
+                  (parent_id, unique_id, relationship))
+    conn.commit()
+    return unique_id
+
+# Function to get family members by ID
+def get_family_members(person_id):
+    c.execute('''
+        SELECT persons.id, persons.name, relationships.relationship 
+        FROM persons 
+        JOIN relationships ON persons.id = relationships.relative_id 
+        WHERE relationships.person_id = ?
+    ''', (person_id,))
+    return c.fetchall()
+
+# Function to get the entire family tree for a given ID
+def get_family_tree(person_id, family_tree=None, depth=0):
+    if family_tree is None:
+        family_tree = {}
+    c.execute('''
+        SELECT persons.id, persons.name, relationships.relationship 
+        FROM persons 
+        JOIN relationships ON persons.id = relationships.relative_id 
+        WHERE relationships.person_id = ?
+    ''', (person_id,))
+    members = c.fetchall()
+    family_tree[person_id] = {'members': members, 'depth': depth}
+    for member in members:
+        get_family_tree(member[0], family_tree, depth + 1)
+    return family_tree
+
+# Tkinter UI
+class FamilyTreeApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Family Tree Mapping")
+
+        # Create UI elements
+        self.create_ui()
+
+    def create_ui(self):
+        self.new_family_button = tk.Button(self.root, text="Register New Family", command=self.register_new_family)
+        self.new_family_button.pack()
+
+        self.existing_family_button = tk.Button(self.root, text="Add Relative to Existing Family", command=self.add_relative)
+        self.existing_family_button.pack()
+
+        self.show_tree_button = tk.Button(self.root, text="Show Family Tree", command=self.show_family_tree)
+        self.show_tree_button.pack()
+
+    def register_new_family(self):
+        self.clear_ui()
+        self.show_person_form()
+
+    def add_relative(self):
+        self.clear_ui()
+        self.show_relative_form()
+
+    def show_family_tree(self):
+        self.clear_ui()
+        self.show_tree_form()
+
+    def clear_ui(self):
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+    def show_person_form(self, parent_id=None, relationship=None):
+        self.form_frame = tk.Frame(self.root)
+        self.form_frame.pack()
+
+        self.name_label = tk.Label(self.form_frame, text="Name")
+        self.name_label.grid(row=0, column=0)
+        self.name_entry = tk.Entry(self.form_frame)
+        self.name_entry.grid(row=0, column=1)
+
+        self.parent_name_label = tk.Label(self.form_frame, text="Parent Name")
+        self.parent_name_label.grid(row=1, column=0)
+        self.parent_name_entry = tk.Entry(self.form_frame)
+        self.parent_name_entry.grid(row=1, column=1)
+
+        self.address_label = tk.Label(self.form_frame, text="Full Address")
+        self.address_label.grid(row=2, column=0)
+        self.address_entry = tk.Entry(self.form_frame)
+        self.address_entry.grid(row=2, column=1)
+
+        self.blood_group_label = tk.Label(self.form_frame, text="Blood Group")
+        self.blood_group_label.grid(row=3, column=0)
+        self.blood_group_entry = tk.Entry(self.form_frame)
+        self.blood_group_entry.grid(row=3, column=1)
+
+        self.whatsapp_label = tk.Label(self.form_frame, text="WhatsApp Number")
+        self.whatsapp_label.grid(row=4, column=0)
+        self.whatsapp_entry = tk.Entry(self.form_frame)
+        self.whatsapp_entry.grid(row=4, column=1)
+
+        self.email_label = tk.Label(self.form_frame, text="Email")
+        self.email_label.grid(row=5, column=0)
+        self.email_entry = tk.Entry(self.form_frame)
+        self.email_entry.grid(row=5, column=1)
+
+        self.submit_button = tk.Button(self.form_frame, text="Submit", command=lambda: self.submit_person_form(parent_id, relationship))
+        self.submit_button.grid(row=6, column=0, columnspan=2)
+
+    def show_relative_form(self):
+        self.relative_frame = tk.Frame(self.root)
+        self.relative_frame.pack()
+
+        self.existing_id_label = tk.Label(self.relative_frame, text="Enter Unique ID of Existing Person")
+        self.existing_id_label.grid(row=0, column=0)
+        self.existing_id_entry = tk.Entry(self.relative_frame)
+        self.existing_id_entry.grid(row=0, column=1)
+
+        self.relationship_label = tk.Label(self.relative_frame, text="Relationship")
+        self.relationship_label.grid(row=1, column=0)
+        self.relationship_options = ["Father", "Mother", "Brother", "Sister", "Son", "Daughter"]
+        self.relationship_var = tk.StringVar(self.relative_frame)
+        self.relationship_var.set(self.relationship_options[0])
+        self.relationship_menu = tk.OptionMenu(self.relative_frame, self.relationship_var, *self.relationship_options)
+        self.relationship_menu.grid(row=1, column=1)
+
+        self.submit_button = tk.Button(self.relative_frame, text="Submit", command=self.submit_relative_form)
+        self.submit_button.grid(row=2, column=0, columnspan=2)
+
+    def submit_person_form(self, parent_id, relationship):
+        details = {
+            'name': self.name_entry.get(),
+            'parent_name': self.parent_name_entry.get(),
+            'address': self.address_entry.get(),
+            'blood_group': self.blood_group_entry.get(),
+            'whatsapp_number': self.whatsapp_entry.get(),
+            'email': self.email_entry.get()
+        }
+        unique_id = add_person(details, parent_id, relationship)
+        print(unique_id)
+        messagebox.showinfo("Success", f"Person registered successfully with ID: {unique_id}")
+        self.clear_ui()
+        self.create_ui()
+
+    def submit_relative_form(self):
+        existing_id = self.existing_id_entry.get()
+        relationship = self.relationship_var.get()
+        self.clear_ui()
+        self.show_person_form(parent_id=existing_id, relationship=relationship)
+        self.show_family_members(existing_id)
+
+    def show_family_members(self, person_id):
+        family_members = get_family_members(person_id)
+        family_frame = tk.Frame(self.root)
+        family_frame.pack()
+
+        family_listbox = tk.Listbox(family_frame)
+        family_listbox.pack(fill=tk.BOTH, expand=True)
+
+        for member in family_members:
+            family_listbox.insert(tk.END, f"ID: {member[0]}, Name: {member[1]}, Relationship: {member[2]}")
+
+    def show_tree_form(self):
+        self.tree_frame = tk.Frame(self.root)
+        self.tree_frame.pack()
+
+        self.tree_id_label = tk.Label(self.tree_frame, text="Enter Unique ID of Family Member")
+        self.tree_id_label.grid(row=0, column=0)
+        self.tree_id_entry = tk.Entry(self.tree_frame)
+        self.tree_id_entry.grid(row=0, column=1)
+
+        self.show_tree_button = tk.Button(self.tree_frame, text="Show Tree", command=self.display_family_tree)
+        self.show_tree_button.grid(row=1, column=0, columnspan=2)
+
+    def display_family_tree(self):
+        person_id = self.tree_id_entry.get()
+        family_tree = get_family_tree(person_id)
+        self.clear_ui()
+        self.draw_family_tree(family_tree, person_id)
+
+    def draw_family_tree(self, family_tree, root_id):
+        self.canvas = tk.Canvas(self.root, width=800, height=600, bg="white")
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+
+        def draw_member(member_id, x, y, depth):
+            members = family_tree.get(member_id, {'members': []})['members']
+            self.canvas.create_text(x, y, text=member_id, tags="family")
+            offset = 80
+            for i, (id, name, relation) in enumerate(members):
+                new_x = x + (i - len(members)/2) * offset
+                new_y = y + 60
+                self.canvas.create_line(x, y, new_x, new_y, arrow=tk.LAST, tags="family")
+                self.canvas.create_text(new_x, new_y, text=f"{name}\n({relation})", tags="family")
+                draw_member(id, new_x, new_y, depth + 1)
+
+        draw_member(root_id, 400, 50, 0)
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = FamilyTreeApp(root)
+    root.mainloop()
